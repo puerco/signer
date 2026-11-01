@@ -4,11 +4,13 @@
 package options
 
 import (
+	"crypto/x509"
 	"errors"
 	"fmt"
 	"os"
 
 	"github.com/carabiner-dev/command"
+	"github.com/sigstore/sigstore/pkg/cryptoutils"
 	"github.com/spf13/cobra"
 
 	"github.com/policylabs/signer/key"
@@ -34,6 +36,17 @@ type KeysSign struct {
 	// --signing-key-passphrase-env.
 	PassphraseEnvVar string
 
+	// CertificatePath is the path to the certificate issued to the first
+	// signing key. Bound to --signing-cert. When set, bundles produced
+	// with the key backend carry the certificate (and the chain below)
+	// as verification material instead of a key hint.
+	CertificatePath string
+
+	// CertificateChainPaths are paths to the intermediate certificates
+	// of CertificatePath, in PEM. Bound to --signing-cert-chain
+	// (repeatable); each file may hold several certificates.
+	CertificateChainPaths []string
+
 	// extraKeys are programmatically supplied providers (via AddKeys).
 	// Returned by ParseSigningKeys ahead of any file-loaded keys.
 	extraKeys []key.PrivateKeyProvider
@@ -52,6 +65,8 @@ const defaultPassphraseEnvVar = "SIGNING_KEY_PASSPHRASE"
 const (
 	flagSigningKey              = "signing-key"
 	flagSigningKeyPassphraseEnv = "signing-key-passphrase-env"
+	flagSigningCert             = "signing-cert"
+	flagSigningCertChain        = "signing-cert-chain"
 )
 
 // DefaultKeysSign returns a KeysSign ready to bind flags. The
@@ -78,6 +93,14 @@ func (k *KeysSign) Config() *command.OptionsSetConfig {
 					Long: flagSigningKeyPassphraseEnv,
 					Help: "envvar to read the signing key passphrase from",
 				},
+				flagSigningCert: {
+					Long: flagSigningCert,
+					Help: "path to the PEM certificate issued to the signing key, recorded in bundles instead of a key hint",
+				},
+				flagSigningCertChain: {
+					Long: flagSigningCertChain,
+					Help: "path to PEM intermediate certificates of the signing certificate (repeatable)",
+				},
 			},
 		}
 	}
@@ -101,6 +124,18 @@ func (k *KeysSign) AddFlags(cmd *cobra.Command) {
 		k.PassphraseEnvVar,
 		cfg.HelpText(flagSigningKeyPassphraseEnv),
 	)
+	pf.StringVar(
+		&k.CertificatePath,
+		cfg.LongFlag(flagSigningCert),
+		k.CertificatePath,
+		cfg.HelpText(flagSigningCert),
+	)
+	pf.StringSliceVar(
+		&k.CertificateChainPaths,
+		cfg.LongFlag(flagSigningCertChain),
+		k.CertificateChainPaths,
+		cfg.HelpText(flagSigningCertChain),
+	)
 }
 
 // Validate checks that every configured signing-key path exists. It
@@ -112,6 +147,19 @@ func (k *KeysSign) Validate() error {
 	for _, p := range k.PrivateKeyPaths {
 		if _, err := os.Stat(p); err != nil {
 			errs = append(errs, fmt.Errorf("checking signing key %q: %w", p, err))
+		}
+	}
+	if k.CertificatePath != "" {
+		if _, err := os.Stat(k.CertificatePath); err != nil {
+			errs = append(errs, fmt.Errorf("checking signing certificate %q: %w", k.CertificatePath, err))
+		}
+	}
+	if k.CertificatePath == "" && len(k.CertificateChainPaths) > 0 {
+		errs = append(errs, fmt.Errorf("--%s requires --%s", flagSigningCertChain, flagSigningCert))
+	}
+	for _, p := range k.CertificateChainPaths {
+		if _, err := os.Stat(p); err != nil {
+			errs = append(errs, fmt.Errorf("checking certificate chain file %q: %w", p, err))
 		}
 	}
 	return errors.Join(errs...)
@@ -137,10 +185,56 @@ func (k *KeysSign) BuildSigner() (*Signer, error) {
 	if len(keys) == 0 {
 		return nil, errors.New("KeysSign.BuildSigner: no signing keys configured")
 	}
+	chain, err := k.ParseCertificateChain()
+	if err != nil {
+		return nil, err
+	}
 	target := DefaultSigner
 	target.Backend = BackendKey
 	target.Keys = keys
+	target.CertificateChain = chain
 	return &target, nil
+}
+
+// ParseCertificateChain reads the signing certificate and its
+// intermediates, leaf first. It returns nil when no certificate is
+// configured.
+func (k *KeysSign) ParseCertificateChain() ([]*x509.Certificate, error) {
+	if k.CertificatePath == "" {
+		return nil, nil
+	}
+	leaf, err := readPEMCertificates(k.CertificatePath)
+	if err != nil {
+		return nil, fmt.Errorf("reading signing certificate: %w", err)
+	}
+	if len(leaf) != 1 {
+		return nil, fmt.Errorf("signing certificate file %q must hold exactly one certificate, found %d", k.CertificatePath, len(leaf))
+	}
+	chain := leaf
+	for _, p := range k.CertificateChainPaths {
+		certs, err := readPEMCertificates(p)
+		if err != nil {
+			return nil, fmt.Errorf("reading certificate chain: %w", err)
+		}
+		chain = append(chain, certs...)
+	}
+	return chain, nil
+}
+
+// readPEMCertificates reads every certificate in a PEM file.
+func readPEMCertificates(path string) ([]*x509.Certificate, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	certs, err := cryptoutils.UnmarshalCertificatesFromPEM(data)
+	if err != nil {
+		return nil, fmt.Errorf("parsing %q: %w", path, err)
+	}
+	if len(certs) == 0 {
+		return nil, fmt.Errorf("no certificates found in %q", path)
+	}
+	return certs, nil
 }
 
 // ParseSigningKeys reads and parses every entry in PrivateKeyPaths
