@@ -161,7 +161,7 @@ func (s *Signer) resolveBackend(funcs []options.SignOptFn) (Backend, error) {
 		}
 	}
 	if len(so.Keys) > 0 {
-		return newKeyBackend(s.dsseSigner, so.Keys), nil
+		return newKeyBackend(s.dsseSigner, so.Keys, nil), nil
 	}
 	return s.persistentBackend()
 }
@@ -199,7 +199,7 @@ func (s *Signer) persistentBackend() (Backend, error) {
 		if len(s.Options.Keys) == 0 {
 			return nil, errors.New("Signer.Options.Backend is BackendKey but Signer.Options.Keys is empty; configure keys or pass options.WithKey(...) per call")
 		}
-		s.persistent = newKeyBackend(s.dsseSigner, s.Options.Keys)
+		s.persistent = newKeyBackend(s.dsseSigner, s.Options.Keys, s.Options.CertificateChain)
 		return s.persistent, nil
 
 	default:
@@ -208,9 +208,9 @@ func (s *Signer) persistentBackend() (Backend, error) {
 }
 
 // SignStatementBundle signs an in-toto attestation and returns a
-// sigstore bundle. Resolves the persistent backend (sigstore or
-// SPIFFE) and unwraps its artifact. Errors when the configured
-// backend is BackendKey — keys can't produce a bundle.
+// sigstore bundle. Resolves the persistent backend and unwraps its
+// artifact. The key backend is asked for a bundle (see
+// options.WithBundle), so every backend answers with one.
 //
 // Use the polymorphic SignStatement when you want format-agnostic
 // dispatch.
@@ -220,7 +220,7 @@ func (s *Signer) SignStatementBundle(data []byte, funcs ...options.SignOptFn) (*
 		return nil, err
 	}
 	if backend.Name() == options.BackendKey {
-		return nil, errors.New("SignStatementBundle: configured backend is BackendKey; use SignStatement (polymorphic) or SignStatementToDSSE")
+		funcs = append(append([]options.SignOptFn{}, funcs...), options.WithBundle())
 	}
 	art, err := backend.SignStatement(data, funcs...)
 	if err != nil {
@@ -241,7 +241,7 @@ func (s *Signer) SignMessageBundle(data []byte, funcs ...options.SignOptFn) (*sb
 		return nil, err
 	}
 	if backend.Name() == options.BackendKey {
-		return nil, errors.New("SignMessageBundle: configured backend is BackendKey; use SignMessage (polymorphic) or SignMessageToDSSE")
+		funcs = append(append([]options.SignOptFn{}, funcs...), options.WithBundle())
 	}
 	art, err := backend.SignMessage(data, funcs...)
 	if err != nil {
@@ -283,7 +283,7 @@ func (s *Signer) SignMessageToDSSE(data []byte, funcs ...options.SignOptFn) (*sd
 		return nil, errors.New("no signing keys; pass options.WithKey(...) or set Signer.Options.Backend=BackendKey + Signer.Options.Keys")
 	}
 
-	backend := newKeyBackend(s.dsseSigner, keys)
+	backend := newKeyBackend(s.dsseSigner, keys, nil)
 	art, err := backend.SignMessage(data, funcs...)
 	if err != nil {
 		return nil, err

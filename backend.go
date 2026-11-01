@@ -7,6 +7,7 @@ package signer
 
 import (
 	"context"
+	"crypto/x509"
 	"errors"
 	"fmt"
 	"sync"
@@ -231,10 +232,13 @@ func (b *spiffeBackend) prepare() error {
 type keyBackend struct {
 	dsseSigner dsse.Signer
 	keys       []key.PrivateKeyProvider
+	// chain is the configured certificate chain for keys[0], used when
+	// a bundle is requested and the call brings no chain of its own.
+	chain []*x509.Certificate
 }
 
-func newKeyBackend(ds dsse.Signer, keys []key.PrivateKeyProvider) *keyBackend {
-	return &keyBackend{dsseSigner: ds, keys: keys}
+func newKeyBackend(ds dsse.Signer, keys []key.PrivateKeyProvider, chain []*x509.Certificate) *keyBackend {
+	return &keyBackend{dsseSigner: ds, keys: keys, chain: chain}
 }
 
 func (b *keyBackend) Name() options.Backend { return options.BackendKey }
@@ -276,6 +280,25 @@ func (b *keyBackend) sign(payloadType string, data []byte, funcs ...options.Sign
 		return nil, errors.New("no signing keys; pass options.WithKey(...) or set Signer.Options.Backend=BackendKey + Signer.Options.Keys")
 	}
 
+	// A per-call chain replaces the configured one, like keys do. The
+	// configured chain only applies to the configured keys.
+	chain := so.CertificateChain
+	if len(chain) == 0 && len(so.Keys) == 0 {
+		chain = b.chain
+	}
+	wantBundle := so.Bundle || len(chain) > 0
+
+	// Check the bundle material before signing, so a bad chain is
+	// reported without doing the work.
+	var material *protobundle.VerificationMaterial
+	if wantBundle {
+		var err error
+		material, err = keyVerificationMaterial(keys[0], chain)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	env, err := b.dsseSigner.WrapPayload(payloadType, data)
 	if err != nil {
 		return nil, fmt.Errorf("wrapping payload: %w", err)
@@ -283,7 +306,10 @@ func (b *keyBackend) sign(payloadType string, data []byte, funcs ...options.Sign
 	if err := b.dsseSigner.Sign(env, keys); err != nil {
 		return nil, fmt.Errorf("signing envelope: %w", err)
 	}
-	return &EnvelopeArtifact{Envelope: env}, nil
+	if !wantBundle {
+		return &EnvelopeArtifact{Envelope: env}, nil
+	}
+	return &BundleArtifact{Bundle: bundleFromEnvelope(env, material)}, nil
 }
 
 // attachIntermediates rewrites the bundle's VerificationMaterial to

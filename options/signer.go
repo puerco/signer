@@ -4,6 +4,7 @@
 package options
 
 import (
+	"crypto/x509"
 	"errors"
 	"fmt"
 
@@ -80,6 +81,13 @@ type Signer struct {
 	// options.WithKey(...) is supplied. Per-call WithKey replaces (does
 	// not augment) these keys for the single invocation that passes it.
 	Keys []key.PrivateKeyProvider
+
+	// CertificateChain is the certificate issued to the first of Keys,
+	// followed by its intermediates. When set, bundles produced by the
+	// key backend carry the chain as their verification material
+	// instead of a key hint. Per-call options.WithCertificateChain
+	// replaces it for that invocation.
+	CertificateChain []*x509.Certificate
 
 	parsedRoots bool
 }
