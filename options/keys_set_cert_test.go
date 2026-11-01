@@ -23,7 +23,7 @@ import (
 // its path. count certificates are concatenated when asked.
 func writeSelfSignedPEM(t *testing.T, dir, name string, count int) string {
 	t.Helper()
-	var out []byte
+	out := make([]byte, 0, count*1024)
 	for i := range count {
 		priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 		require.NoError(t, err)
