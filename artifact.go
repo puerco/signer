@@ -12,6 +12,8 @@ import (
 	sdsse "github.com/sigstore/protobuf-specs/gen/pb-go/dsse"
 	sbundle "github.com/sigstore/sigstore-go/pkg/bundle"
 	"google.golang.org/protobuf/encoding/protojson"
+
+	"github.com/policylabs/signer/bundle"
 )
 
 // ArtifactKind is the format of a SignedArtifact.
@@ -151,8 +153,8 @@ func ParseArtifact(data []byte) (SignedArtifact, error) {
 
 	switch {
 	case probe.MediaType != "":
-		bndl := &sbundle.Bundle{}
-		if err := bndl.UnmarshalJSON(data); err != nil {
+		bndl, err := bundle.ParseJSON(data)
+		if err != nil {
 			return nil, fmt.Errorf("parsing sigstore bundle: %w", err)
 		}
 		return &BundleArtifact{Bundle: bndl}, nil

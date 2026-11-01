@@ -146,7 +146,7 @@ type DefaultVerifier struct {
 
 // OpenBundle opens a bundle file
 func (bv *DefaultVerifier) OpenBundle(path string) (*bundle.Bundle, error) {
-	b, err := bundle.LoadJSONFromPath(path)
+	b, err := ParseFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("opening path: %w", err)
 	}
