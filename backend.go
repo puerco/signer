@@ -23,6 +23,10 @@ import (
 	"github.com/policylabs/signer/options"
 )
 
+// intotoPayloadType is the DSSE payload type of in-toto statements, the
+// same for every backend.
+const intotoPayloadType = "application/vnd.in-toto+json"
+
 // Backend is one of the three signing implementations the Signer
 // dispatches to. Real implementations are constructed by
 // Signer.resolveBackend based on Signer.Options.Backend (or per-call
@@ -104,7 +108,7 @@ func (b *sigstoreBackend) SignStatement(data []byte, _ ...options.SignOptFn) (Si
 	if err := b.prepare(); err != nil {
 		return nil, err
 	}
-	content := b.bundleSigner.WrapData("application/vnd.in-toto+json", data)
+	content := b.bundleSigner.WrapData(intotoPayloadType, data)
 	bndl, err := b.signBundleContent(content)
 	if err != nil {
 		return nil, err
@@ -178,7 +182,7 @@ func (b *spiffeBackend) SignStatement(data []byte, _ ...options.SignOptFn) (Sign
 	if err := b.prepare(); err != nil {
 		return nil, err
 	}
-	content := b.bundleSigner.WrapData("application/vnd.in-toto+json", data)
+	content := b.bundleSigner.WrapData(intotoPayloadType, data)
 	bndl, err := b.signBundleContent(content)
 	if err != nil {
 		return nil, err
@@ -244,7 +248,7 @@ func newKeyBackend(ds dsse.Signer, keys []key.PrivateKeyProvider, chain []*x509.
 func (b *keyBackend) Name() options.Backend { return options.BackendKey }
 
 func (b *keyBackend) SignStatement(data []byte, funcs ...options.SignOptFn) (SignedArtifact, error) {
-	return b.sign("https://in-toto.io/Statement/v1", data, funcs...)
+	return b.sign(intotoPayloadType, data, funcs...)
 }
 
 func (b *keyBackend) SignMessage(data []byte, funcs ...options.SignOptFn) (SignedArtifact, error) {
