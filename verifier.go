@@ -109,14 +109,11 @@ func (v *Verifier) VerifyBundle(bundlePath string, fnOpts ...options.Verificatio
 
 // VerifyBundle verifies a signed bundle containing a dsse envelope
 func (v *Verifier) VerifyInlineBundle(bundleContents []byte, fnOpts ...options.VerificationOptFunc) (*verify.VerificationResult, error) {
-	var bndl sbundle.Bundle
-
-	// Unmarshal the bundle
-	err := bndl.UnmarshalJSON(bundleContents)
+	bndl, err := bundle.ParseJSON(bundleContents)
 	if err != nil {
 		return nil, fmt.Errorf("unmarshaling JSON: %w", err)
 	}
-	return v.VerifyParsedBundle(&bndl, fnOpts...)
+	return v.VerifyParsedBundle(bndl, fnOpts...)
 }
 
 // VerifyParsedBundle verifies a sigstore bundle with the provided options
