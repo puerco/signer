@@ -87,7 +87,7 @@ func TestKeyBackendBundle(t *testing.T) {
 			require.Empty(t, vm.GetTlogEntries())
 			env := b.GetDsseEnvelope()
 			require.NotNil(t, env)
-			require.Equal(t, "https://in-toto.io/Statement/v1", env.GetPayloadType())
+			require.Equal(t, intotoPayloadType, env.GetPayloadType())
 			require.Len(t, env.GetSignatures(), 1)
 
 			vc, err := b.VerificationContent()

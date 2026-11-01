@@ -260,7 +260,7 @@ func (s *Signer) SignMessageBundle(data []byte, funcs ...options.SignOptFn) (*sb
 // are available.
 func (s *Signer) SignStatementToDSSE(data []byte, funcs ...options.SignOptFn) (*sdsse.Envelope, error) {
 	funcs = append([]options.SignOptFn{}, funcs...)
-	funcs = append(funcs, options.WithPayloadType("https://in-toto.io/Statement/v1"))
+	funcs = append(funcs, options.WithPayloadType(intotoPayloadType))
 	return s.SignMessageToDSSE(data, funcs...)
 }
 
